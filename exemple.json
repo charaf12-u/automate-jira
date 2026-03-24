@@ -1,0 +1,17 @@
+[
+    {
+        "summary": "Fix login bug",
+        "description": "User cannot login with Google account. Check logs for more details.",
+        "issuetype": "Bug"
+    },
+    {
+        "summary": "Implement Dashboard",
+        "description": "Design and code the main dashboard using CustomTkinter.",
+        "issuetype": "Task"
+    },
+    {
+        "summary": "Update Documentation",
+        "description": "Refine the README.md and add screenshots.",
+        "issuetype": "Story"
+    }
+]
