@@ -7,6 +7,15 @@ import threading
 from dotenv import load_dotenv
 from PIL import Image
 import base64
+import sys
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.dirname(__file__)
+    return os.path.join(base_path, relative_path)
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -24,7 +33,7 @@ class JiraApp(ctk.CTk):
         self.resizable(False, False)
         
         # Paths for icons
-        self.asset_dir = os.path.join(os.path.dirname(__file__), "assets")
+        self.asset_dir = resource_path("assets")
         
         # Configuration des couleurs (Premium Dark & Gold)
         self.bg_color = "#0B0F19"
@@ -148,6 +157,17 @@ class JiraApp(ctk.CTk):
             self.file_entry.delete(0, 'end')
             self.file_entry.insert(0, file)
 
+    def update_ui_status(self, text, color):
+        self.status_label.configure(text=text, text_color=color)
+
+    def show_msg_box(self, m_type, title, msg):
+        if m_type == "error":
+            messagebox.showerror(title, msg)
+        elif m_type == "warning":
+            messagebox.showwarning(title, msg)
+        elif m_type == "info":
+            messagebox.showinfo(title, msg)
+
     def start_import(self):
         project = self.project_entry.get().strip()
         json_path = self.file_entry.get().strip()
@@ -170,8 +190,28 @@ class JiraApp(ctk.CTk):
             with open(json_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            tasks = data if isinstance(data, list) else data.get("tasks", [])
-            
+            # Détection de la structure
+            epics = data.get("epics", []) if isinstance(data, dict) else []
+            if not epics and isinstance(data, list):
+                epics = [{"epic": "Tasks Import", "tasks": data}]
+            elif not epics and isinstance(data, dict):
+                # Structure plate possible sans "epics"
+                single_tasks = data.get("tasks", [])
+                if single_tasks:
+                    epics = [{"epic": "Tasks Import", "tasks": single_tasks}]
+                else:
+                    self.after(0, lambda: self.show_msg_box("warning", "JSON Vide", "Aucune tâche ou epic trouvé dans le fichier."))
+                    return
+            elif not epics:
+                self.after(0, lambda: self.show_msg_box("warning", "JSON Invalide", "Format de fichier non reconnu."))
+                return
+
+            # Read mapping from JSON, with fallbacks to Jira valid French types
+            mapping = data.get("jira_mapping", {})
+            type_epic = mapping.get("epic", "Epic")
+            type_task = mapping.get("task", "Tâche")
+            type_subtask = mapping.get("subtask", "Subtask")
+
             auth_str = f"{JIRA_EMAIL}:{JIRA_API_TOKEN}"
             auth_b64 = base64.b64encode(auth_str.encode()).decode()
             
@@ -183,44 +223,93 @@ class JiraApp(ctk.CTk):
             
             url = f"https://{JIRA_DOMAIN}/rest/api/3/issue"
             
-            count = 0
-            for i, task in enumerate(tasks, 1):
-                self.status_label.configure(text=f"Importation {i}/{len(tasks)} : {task.get('summary', 'Task')}...")
+            total_created = 0
+            
+            for epic_data in epics:
+                epic_name = epic_data.get("epic", "Sans Titre")
+                self.after(0, lambda e_name=epic_name: self.update_ui_status(f"Création de l'Epic : {e_name[:30]}...", self.text_color))
                 
-                payload = {
+                # 1. Créer l'Epic
+                epic_payload = {
                     "fields": {
                         "project": {"key": project},
-                        "summary": task.get("summary", task.get("title", "No Title")),
-                        "description": {
-                            "type": "doc",
-                            "version": 1,
-                            "content": [
-                                {
-                                    "type": "paragraph",
-                                    "content": [
-                                        {"type": "text", "text": task.get("description", task.get("desc", ""))}
-                                    ]
-                                }
-                            ]
-                        },
-                        "issuetype": {"name": task.get("issuetype", "Task")}
+                        "summary": epic_name,
+                        "issuetype": {"name": type_epic}
                     }
                 }
                 
-                response = requests.post(url, json=payload, headers=headers)
-                if response.status_code == 201:
-                    count += 1
+                epic_key = None
+                resp = requests.post(url, json=epic_payload, headers=headers)
+                if resp.status_code == 201:
+                    epic_key = resp.json().get("key")
+                    total_created += 1
                 else:
-                    print(f"Error {response.status_code}: {response.text}")
+                    err_msg = f"Erreur Epic {epic_name[:20]} ({resp.status_code}): {resp.text}"
+                    print(err_msg)
+                    self.after(0, lambda e=err_msg: self.update_ui_status(f"❌ {e[:50]}...", "#EF4444"))
+                    self.after(0, lambda e=err_msg: self.show_msg_box("error", "Erreur API", e))
+                    return # Stop on first major error
+
+                # 2. Créer les Tasks
+                tasks = epic_data.get("tasks", [])
+                for task in tasks:
+                    task_name = task.get("task_name", task.get("summary", "Nouvelle Tâche"))
+                    self.after(0, lambda t_name=task_name: self.update_ui_status(f"Task : {t_name[:30]}...", self.text_color))
+                    
+                    task_payload = {
+                        "fields": {
+                            "project": {"key": project},
+                            "summary": task_name,
+                            "issuetype": {"name": type_task}
+                        }
+                    }
+                    if epic_key:
+                        task_payload["fields"]["parent"] = {"key": epic_key}
+                    
+                    task_key = None
+                    resp = requests.post(url, json=task_payload, headers=headers)
+                    if resp.status_code == 201:
+                        task_key = resp.json().get("key")
+                        total_created += 1
+                    else:
+                        err_msg = f"Erreur Task {task_name[:20]} ({resp.status_code}): {resp.text}"
+                        print(err_msg)
+                        self.after(0, lambda e=err_msg: self.update_ui_status(f"❌ {e[:50]}...", "#EF4444"))
+                        self.after(0, lambda e=err_msg: self.show_msg_box("error", "Erreur API", e))
+                        return
+                    
+                    # 3. Créer les Subtasks
+                    subtasks = task.get("subtasks", [])
+                    for sub_name in subtasks:
+                        if not isinstance(sub_name, str): continue
+                        self.after(0, lambda s_name=sub_name: self.update_ui_status(f"Subtask : {s_name[:30]}...", self.text_color))
+                        
+                        sub_payload = {
+                            "fields": {
+                                "project": {"key": project},
+                                "summary": sub_name,
+                                "issuetype": {"name": type_subtask},
+                                "parent": {"key": task_key} if task_key else None
+                            }
+                        }
+                        if task_key:
+                            resp = requests.post(url, json=sub_payload, headers=headers)
+                            if resp.status_code == 201:
+                                total_created += 1
+                            else:
+                                err_msg = f"Erreur Subtask {sub_name[:20]} ({resp.status_code}): {resp.text}"
+                                print(err_msg)
+                                self.after(0, lambda e=err_msg: self.update_ui_status(f"⚠️ {e[:50]}...", "#F59E0B"))
             
-            self.status_label.configure(text=f"✅ {count} tâches importées avec succès !", text_color="#10B981")
-            messagebox.showinfo("Succès", f"{count} issues ont été créées sur Jira.")
+            self.after(0, lambda c=total_created: self.update_ui_status(f"✅ {c} issues créées avec succès !", "#10B981"))
+            self.after(0, lambda c=total_created: self.show_msg_box("info", "Succès", f"{c} issues ont été créées sur Jira."))
             
         except Exception as e:
-            self.status_label.configure(text="❌ Une erreur est survenue.", text_color="#EF4444")
-            messagebox.showerror("Erreur", str(e))
+            err_str = str(e)
+            self.after(0, lambda: self.update_ui_status("❌ Une erreur est survenue.", "#EF4444"))
+            self.after(0, lambda e_str=err_str: self.show_msg_box("error", "Erreur", e_str))
         finally:
-            self.import_btn.configure(state="normal", text="🚀 LANCER L'IMPORTATION")
+            self.after(0, lambda: self.import_btn.configure(state="normal", text="🚀 LANCER L'IMPORTATION"))
 
 if __name__ == "__main__":
     app = JiraApp()

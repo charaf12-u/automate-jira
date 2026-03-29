@@ -1,17 +1,57 @@
-[
-    {
-        "summary": "Fix login bug",
-        "description": "User cannot login with Google account. Check logs for more details.",
-        "issuetype": "Bug"
+{
+    "project_name": "Projet de D\u00e9monstration Jira",
+    "project_type": "Software Development",
+    "dataset": "N/A",
+    "total_rows": 0,
+    "total_columns": 0,
+    "deadline": "2026-12-31",
+    "jira_mapping": {
+        "epic": "Epic",
+        "task": "T\u00e2che",
+        "subtask": "Sous-t\u00e2che"
     },
-    {
-        "summary": "Implement Dashboard",
-        "description": "Design and code the main dashboard using CustomTkinter.",
-        "issuetype": "Task"
-    },
-    {
-        "summary": "Update Documentation",
-        "description": "Refine the README.md and add screenshots.",
-        "issuetype": "Story"
-    }
-]
+    "epics": [
+        {
+            "epic": "Configuration et Architecture",
+            "tasks": [
+                {
+                    "task_name": "Initialisation du Projet",
+                    "subtasks": [
+                        "Cr\u00e9er le d\u00e9p\u00f4t GitHub",
+                        "Configurer les variables d'environnement (.env)",
+                        "Installer les d\u00e9pendances (requirements.txt)"
+                    ]
+                },
+                {
+                    "task_name": "Configuration Jira",
+                    "subtasks": [
+                        "G\u00e9n\u00e9rer le token API Jira",
+                        "Configurer le projet Kanban",
+                        "V\u00e9rifier les 'Issue Types' dans Jira"
+                    ]
+                }
+            ]
+        },
+        {
+            "epic": "D\u00e9veloppement de l'Application",
+            "tasks": [
+                {
+                    "task_name": "Interface Graphique (GUI)",
+                    "subtasks": [
+                        "D\u00e9velopper l'interface avec CustomTkinter",
+                        "Ajouter les ic\u00f4nes et le logo",
+                        "Tester la r\u00e9activit\u00e9 (Responsive Design)"
+                    ]
+                },
+                {
+                    "task_name": "Logique d'Importation",
+                    "subtasks": [
+                        "D\u00e9velopper la fonction process_import()",
+                        "Impl\u00e9menter la gestion des erreurs Jira API",
+                        "G\u00e9rer les Threads pour un d\u00e9roulement fluide"
+                    ]
+                }
+            ]
+        }
+    ]
+}
